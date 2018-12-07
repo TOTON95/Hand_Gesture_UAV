@@ -116,6 +116,7 @@ Important: The address of the vicon system should be modified (at the launch fil
 
 ``$ cd ../``
 
+
 - Darknet ROS:
 
 ``$ cd src``
@@ -136,8 +137,22 @@ That means that the configuration of the graphical card is not at the CMakeLists
 
 (Please refer to https://github.com/leggedrobotics/darknet_ros, for more information)
 
+Follow the instructions at the website above to locate the weights of the hand gestures
+
+
 Finally clone this repository and build it 
 
 ``git clone https://github.com/TOTON95/Hand_Gesture_UAV.git``
+
+``cd ../..``
+
+``catkin_make``
+
+
+##Running 
+
+- Start a new terminal and type roscore
+- Start a new terminal for each package and type ``rosrun <name_package> <name_node>``, being the hand gestures the last one to activate
+- Some of the packages offer the possibility to be initialized using roslaunch (see the respective repository for more info)
 
 
