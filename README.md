@@ -1,8 +1,8 @@
-#UAV Hand gestures
+# UAV Hand gestures
 
 This ROS node is capable of control a UAV (Parrot Bebop) with Tiny YOLO v3 and a Kinect Sensor (V1). This approach consists in the detection of a particular gesture based on ASL to command the UAV and navigate through the different waypoints created by the user.
 
-##Prerequisites
+## Prerequisites
 
 This node was tested using Ubuntu 18.04 and ROS Melodic
 
@@ -16,7 +16,7 @@ This node was tested using Ubuntu 18.04 and ROS Melodic
 + Darknet ROS
 + CUDA
 
-##Installation
+## Installation
 
 1. Create a new workspace and move in it
 
@@ -149,7 +149,7 @@ Finally clone this repository and build it
 ``catkin_make``
 
 
-##Running 
+## Running 
 
 - Start a new terminal and type roscore
 - Start a new terminal for each package and type ``rosrun <name_package> <name_node>``, being the hand gestures the last one to activate
