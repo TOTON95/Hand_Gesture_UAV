@@ -29,14 +29,12 @@ geometry_msgs::Point hand;						//Point that stores the location of the hand
 cv::Mat depth;								//Depth frame
 cv::Mat rgb;								//RGB frame
 cv::Point p_hand;							//Point hand in the image
-std::vector<cv::Point> points;						//Collection of points in the image
 
 tf::StampedTransform transform_torso; 					//Tracking of the torso
 tf::StampedTransform transform_left_hand;				//Tracking of the left hand
 tf::StampedTransform transform_right_hand;				//Tracking of the right hand
 
 hand_gesture_uav::Waypoint wp;						//Waypoint to be sent to the uav
-hand_gesture_uav::Waypoints wps;					//Waypoints to be sent to the uav
 
 void printTF(tf::StampedTransform& transform)
 {
@@ -55,14 +53,16 @@ void getDepthCameraInfo()
 	}
 }
 
-void drawWps()
+/*void drawWps()
 {
 	for(int i=0; i < points.size(); i++)
 	{
+		std::cout<<"B"<<std::endl;
+
 		double radius = ((1 + 0.60)/ 1.70)*waypoints[i].x+1;
-		cv::circle(rgb, points[i], radius*10, cv::Scalar(0,255,0),-1);
+		cv::circle(rgb, points[i], radius*10, cv::Scalar(255,255,0),-1);
 	}
-}
+}*/
 
 void getCurrentPoint()
 {
@@ -87,7 +87,7 @@ void getCurrentPoint()
 		//	ROS_INFO("x: %d, y: %d, z: %lf",p_hand.x,p_hand.y,radius);
 			cv::circle(rgb, p_hand, radius*10, cv::Scalar(0,255,0),-1);
 		        std::string str = "X: " + std::to_string(hand.x)	+ " Y: " + std::to_string(hand.y) + " Z: " + std::to_string(hand.z);
-			cv::putText(rgb, str ,cv::Point(20, 20),cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(0,255,0)); 
+			cv::putText(rgb, str ,cv::Point(20, 20),cv::FONT_HERSHEY_SIMPLEX, 0.95, cv::Scalar(0,255,0),3); 
 	}		
 }
 
@@ -132,6 +132,14 @@ void getKinectImage(const sensor_msgs::ImageConstPtr& msg)
         }
 }
 
+
+void updateWaypoint()
+{
+	wp.wp.x = hand.x;
+	wp.wp.y = hand.y;
+	wp.wp.z = hand.z;
+}
+
 //Yolo callback
 void cb_yolo(const hand_gesture_uav::BoundingBoxes::ConstPtr& msg)
 {
@@ -141,26 +149,24 @@ void cb_yolo(const hand_gesture_uav::BoundingBoxes::ConstPtr& msg)
 		if(bb[i].Class=="A")
 		{
 			//TODO: Play Sequence
+			//std::cout<<"A"<<std::endl;
+			
 		}
 		if(bb[i].Class=="B")
                 {
-                        //TODO: Set Waypoint
-			points.push_back(p_hand);
-			waypoints.push_back(hand);
-                }
+
+		}
 		if(bb[i].Class=="C")
                 {
-                        //TODO: Delete Waypoints
-			if(points.size() > 0 && waypoints.size() > 0)
-			{
-				points.pop_back();
-				waypoints.pop_back();
-			}
+			//std::cout<<"D"<<std::endl;
+                        //TODO: Stop Sequence
+			updateWaypoint();
                 }
 		if(bb[i].Class=="D")
                 {
+			//std::cout<<"D"<<std::endl;
                         //TODO: Stop Sequence
-
+			updateWaypoint();
                 }
 	}
 }
@@ -178,6 +184,7 @@ int main(int argc, char** argv)
 	ros::Subscriber yolo_sub;					//Yolo node sub
 	image_transport::Subscriber kinect_sub;				//Kinect image subscriber
 	image_transport::Subscriber rgb_sub;				//Kinect rgb subscriber
+	ros::Publisher wp_pub;						//Waypoint publisher
 
 	tf::TransformListener listener_torso;				//Listener of tf states for the torso
 	tf::TransformListener listener_l_hand;				//Listener of tf states for the left hand
@@ -188,6 +195,9 @@ int main(int argc, char** argv)
 	kinect_sub = it_.subscribe("/camera/depth_registered/sw_registered/image_rect",1,getKinectImage);
 	rgb_sub = it_.subscribe("/camera/rgb/image_rect_color",1,getRGBImage);
 
+	//Publisher ROS node
+	wp_pub = n.advertise<hand_gesture_uav::Waypoint>("/bebop_wps/wp",1000);
+
 	ros::spinOnce();						 //Refresh the topics
 
 	ros::Rate r(100);						 //Rate of the node
@@ -195,19 +205,26 @@ int main(int argc, char** argv)
 	printf("\n========== T A K E O F F ==========\n");
 	ros::Duration(4.5).sleep();					 //Wait until the drone elevates
 		
+	int user = 1;
+
 	//Stops the node once that <Ctrl + C > is pressed
 	while(n.ok())
 	{
 		getYoloInfo();						  //Yolo objdet info
 		getDepthCameraInfo();					  //Depth image retrieval
 		getRGBCameraInfo();					  //RGB image retrieval
-		drawWps();					    	  //Draw waypoints
 
 		try
 		{
-			listener_torso.lookupTransform("/openni_depth_frame","torso_1",ros::Time(0),transform_torso);
-			listener_l_hand.lookupTransform("/openni_depth_frame","left_hand_1",ros::Time(0),transform_left_hand);
-			listener_r_hand.lookupTransform("/openni_depth_frame","right_hand_1",ros::Time(0),transform_right_hand);
+			std::string torso = "torso_" + std::to_string(user);
+			std::string l_hand = "left_hand_" + std::to_string(user);
+			std::string r_hand = "right_hand" + std::to_string(user);
+
+			listener_torso.lookupTransform("/openni_depth_frame",torso,ros::Time(0),transform_torso);
+			listener_l_hand.lookupTransform("/openni_depth_frame",l_hand,ros::Time(0),transform_left_hand);
+			listener_r_hand.lookupTransform("/openni_depth_frame",r_hand,ros::Time(0),transform_right_hand);
+
+			wp_pub.publish(wp);
 			
 			//printTF(transform_torso);
 			//printTF(transform_left_hand);
@@ -215,7 +232,11 @@ int main(int argc, char** argv)
 		}
 		catch(tf::TransformException ex)
 		{
+			ROS_ERROR("Changing to other user, currently: %d" , user);
 			ROS_ERROR("%s",ex.what());
+			user++;
+
+			if(user>3) user=1;
 		}
 
 		ros::spinOnce();
