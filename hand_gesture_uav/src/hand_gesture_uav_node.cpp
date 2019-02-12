@@ -14,6 +14,8 @@
 #include <hand_gesture_uav/Waypoints.h>
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/Image.h>
+#include <sensor_msgs/image_encodings.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui.hpp>
 #include <ros/ros.h>
@@ -33,8 +35,17 @@ cv::Point p_hand;							//Point hand in the image
 tf::StampedTransform transform_torso; 					//Tracking of the torso
 tf::StampedTransform transform_left_hand;				//Tracking of the left hand
 tf::StampedTransform transform_right_hand;				//Tracking of the right hand
+tf::StampedTransform transform_head;					//Tracking of head
 
 hand_gesture_uav::Waypoint wp;						//Waypoint to be sent to the uav
+
+sensor_msgs::ImagePtr img_bridge;					//Republished image
+
+image_transport::Publisher pub_cv_img;					//Image Publisher
+
+geometry_msgs::Twist vel_drone, vel_hand;				//Drone and Hand velocities
+
+unsigned int img_counter = 0; 
 
 void printTF(tf::StampedTransform& transform)
 {
@@ -42,6 +53,24 @@ void printTF(tf::StampedTransform& transform)
             transform.child_frame_id_.c_str(), transform.getOrigin().x(), \
             transform.getOrigin().y(), transform.getOrigin().z(), transform.getRotation().x(), \
             transform.getRotation().y(), transform.getRotation().z(), transform.getRotation().w());
+}
+
+void print_hand_torso_dist(tf::StampedTransform& hand, tf::StampedTransform& torso, tf::StampedTransform& head)
+{
+	double hand_y = hand.getOrigin().y();
+	double torso_y = torso.getOrigin().y();
+	double dist_y = hand_y - torso_y;
+	
+	double head_z = head.getOrigin().z();
+
+	double hand_z = hand.getOrigin().z();
+	double torso_z = torso.getOrigin().z();
+	double dist_z = hand_z - torso_z;
+
+	double dist_head_torso = head_z - torso_z;
+
+	ROS_INFO("Distance from hand to torso:  y = %lf, z = %lf\n", dist_y, dist_z - 0.30);
+	ROS_INFO("Distance from head to torso:  z = %lf\n", dist_head_torso);
 }
 
 void getDepthCameraInfo()
@@ -95,9 +124,17 @@ void getRGBCameraInfo()
 {
 	if(!rgb.empty())
         {
+		img_counter++;
 		getCurrentPoint();
-                cv::imshow("rgb",rgb);
-                cv::waitKey(27);
+
+		std_msgs::Header header;
+		header.seq = img_counter;
+		header.stamp = ros::Time::now();
+		cv_bridge::CvImage _img;
+		_img.encoding = "bgr8";
+		_img.image = rgb.clone(); 
+		img_bridge = _img.toImageMsg();
+		pub_cv_img.publish(img_bridge);
         }
 }
 
@@ -189,6 +226,7 @@ int main(int argc, char** argv)
 	tf::TransformListener listener_torso;				//Listener of tf states for the torso
 	tf::TransformListener listener_l_hand;				//Listener of tf states for the left hand
 	tf::TransformListener listener_r_hand;				//Listener of tf states for the right hand
+	tf::TransformListener listener_head;				//Listener of tf states for the head
 	
 	//Subscribers of the ROS node
 	yolo_sub = n.subscribe("/darknet_ros/bounding_boxes",30,cb_yolo);
@@ -197,6 +235,7 @@ int main(int argc, char** argv)
 
 	//Publisher ROS node
 	wp_pub = n.advertise<hand_gesture_uav::Waypoint>("/bebop_wps/wp",1000);
+	pub_cv_img = it_.advertise("/hgu/gui",100);
 
 	ros::spinOnce();						 //Refresh the topics
 
@@ -211,30 +250,37 @@ int main(int argc, char** argv)
 	while(n.ok())
 	{
 		getYoloInfo();						  //Yolo objdet info
-		getDepthCameraInfo();					  //Depth image retrieval
+	//	getDepthCameraInfo();					  //Depth image retrieval
 		getRGBCameraInfo();					  //RGB image retrieval
 
 		try
 		{
 			std::string torso = "torso_" + std::to_string(user);
 			std::string l_hand = "left_hand_" + std::to_string(user);
-			std::string r_hand = "right_hand" + std::to_string(user);
+			std::string r_hand = "right_hand_" + std::to_string(user);
+			std::string head = "head_" + std::to_string(user); 
 
 			listener_torso.lookupTransform("/openni_depth_frame",torso,ros::Time(0),transform_torso);
 			listener_l_hand.lookupTransform("/openni_depth_frame",l_hand,ros::Time(0),transform_left_hand);
 			listener_r_hand.lookupTransform("/openni_depth_frame",r_hand,ros::Time(0),transform_right_hand);
+			listener_head.lookupTransform("/openni_depth_frame",head,ros::Time(0),transform_head);	
 
 			wp_pub.publish(wp);
 			
 			//printTF(transform_torso);
 			//printTF(transform_left_hand);
 			//printTF(transform_right_hand);
+
+			print_hand_torso_dist(transform_left_hand,transform_torso,transform_head);
 		}
 		catch(tf::TransformException ex)
 		{
 			ROS_ERROR("Changing to other user, currently: %d" , user);
 			ROS_ERROR("%s",ex.what());
-			user++;
+			//print_hand_torso_dist(transform_left_hand,transform_torso);
+			//user++;
+
+
 
 			if(user>3) user=1;
 		}
